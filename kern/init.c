@@ -12,6 +12,8 @@ void
 test_backtrace(int x)
 {
 	cprintf("entering test_backtrace %d\n", x);
+        //int tmp2 = tmp;
+        //cprintf("%d\n",tmp2);
 	if (x > 0)
 		test_backtrace(x-1);
 	else
