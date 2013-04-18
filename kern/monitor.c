@@ -22,9 +22,17 @@ struct Command {
 	int (*func)(int argc, char** argv, struct Trapframe* tf);
 };
 
+struct Stackframe{
+	int ebp;
+	int eip;
+	int *args;
+	int argn;
+};
+
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
+	{ "backtrace", "Display the stack info", mon_backtrace},
 };
 #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
 
@@ -57,12 +65,114 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 	return 0;
 }
 
+
+// Lab1 only
+// read the pointer to the retaddr on the stack
+static uint32_t
+read_pretaddr() {
+    uint32_t pretaddr;
+    __asm __volatile("leal 4(%%ebp), %0" : "=r" (pretaddr)); 
+    return pretaddr;
+}
+
+void
+do_overflow(void)
+{
+    cprintf("Overflow success\n");
+}
+
+void
+start_overflow(void)
+{
+	// You should use a techique similar to buffer overflow
+	// to invoke the do_overflow function and
+	// the procedure must return normally.
+
+    // And you must use the "cprintf" function with %n specifier
+    // you augmented in the "Exercise 9" to do this job.
+
+    // hint: You can use the read_pretaddr function to retrieve 
+    //       the pointer to the function call return address;
+
+        char str[256] = {0x55,0x89,0xe5};
+	int nstr = 0;
+        char *pret_addr;
+        int eip;
+ 	int i;
+	unsigned int addr;
+	for(i = 0; i < 256; i++){
+		str[i] = '1';
+	}
+       
+	__asm __volatile("movl %%ebp, %0" : "=a" (pret_addr));
+	__asm __volatile("movl 4(%%ebp), %0" : "=a" (eip));
+	addr = (unsigned int)str;
+	str[addr & 0x000000ff] = '\0';
+	pret_addr += 4;
+	cprintf("%s%n",str,pret_addr);
+	pret_addr += 1;
+	str[addr & 0x000000ff] = '1';
+	str[(addr >> 8) & 0x000000ff] = '\0';
+	cprintf("%s%n",str,pret_addr);
+	str[(addr >> 8) & 0x000000ff] = '1';
+	str[(addr >> 16) & 0x000000ff] = '\0';
+	pret_addr += 1;
+	cprintf("%s%n",str,pret_addr);
+	str[(addr >> 16) & 0x000000ff] = '1';
+	str[(addr >> 24) & 0x000000ff] = '\0';
+	pret_addr += 1;
+	cprintf("%s%n",str,pret_addr);
+	// Your code here.
+	str[0] = 0x68;
+	*((int *)(str+1)) = eip;
+	str[5] = 0x68;
+	*((int *)(str+6)) = (int)do_overflow;
+	str[10] = 0xc3;
+   	cprintf("%s\n",str); 
+	cprintf("%x\n",eip);
+}
+
+void
+overflow_me(void)
+{
+        start_overflow();
+}
+
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
-	// Your code here.
+	int i;
+	uint32_t ebp;
+	uint32_t eip;
+	uint32_t ebp2;
+	struct Eipdebuginfo di;
+	__asm __volatile("movl %%ebp, %0" : "=r" (ebp));
+	eip = read_eip();
+	//__asm __volatile("movl 4(%%ebp), %0" : "=r" (eip));
+	//debuginfo_eip(eip, &di);	
+	//cprintf("ebp %x	eip %x	args\n", ebp, eip);	
+	//cprintf("\t%s:%d %s+%u\n", di.eip_file, di.eip_line, di.eip_fn_name, di.eip_fn_addr);
+	do {
+		cprintf("ebp %x	eip %x	args %08x %08x %08x %08x %08x\n", ebp, eip, *(((int *)ebp)+2),*(((int *)ebp)+3),*(((int *)ebp)+4),*(((int *)ebp)+5),*(((int *)ebp)+6));
+		__asm __volatile("movl (%1), %0" : "=q" (ebp2):"q" (ebp));
+		__asm __volatile("movl 4(%1), %0" : "=q" (eip): "q" (ebp));
+		debuginfo_eip(eip, &di);	
+		ebp = ebp2;
+		cprintf("\t%s:%d %s+%u\n", di.eip_file, di.eip_line, di.eip_fn_name, eip - di.eip_fn_addr);
+		
+	} while(ebp != 0);
+        overflow_me();
+        cprintf("Backtrace success\n");
 	return 0;
 }
+//int
+//mon_backtrace(int argc, char **argv, struct Trapframe *tf)
+//{
+//	// Your code here.
+//    overflow_me();
+//    cprintf("Backtrace success\n");
+//	return 0;
+//}
 
 
 
