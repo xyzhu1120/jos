@@ -1,4 +1,4 @@
-/* See COPYRIGHT for copyright information. */
+
 
 #include <inc/x86.h>
 #include <inc/mmu.h>
@@ -159,6 +159,7 @@ mem_init(void)
 	//////////////////////////////////////////////////////////////////////
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
 	// LAB 3: Your code here.
+	envs = boot_alloc(NENV * sizeof(struct Env));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -213,6 +214,7 @@ mem_init(void)
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
 	boot_map_region(kern_pgdir, KERNBASE, ROUNDUP(0xffffffff-KERNBASE, PGSIZE), 0, PTE_W);
+	boot_map_region(kern_pgdir, UENVS, ROUNDUP(NENV * sizeof(struct Env), PGSIZE), PADDR(envs), PTE_U | PTE_P);
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
 
@@ -305,8 +307,6 @@ page_init(void)
 	//}
 	//pages[i].pp_ref = 0;
 	//pages[i].pp_link = NULL;
-
-
 }
 
 //
@@ -525,7 +525,7 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 		if(!pte)
 			return -E_NO_MEM;
 	}else{
-		cprintf("----------3-----------\n");
+		//cprintf("----------3-----------\n");
 		if(*pte & PTE_P)
 			page_remove(pgdir,va);
 	}
@@ -625,7 +625,53 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+	uintptr_t bound = ROUNDUP((uintptr_t)va + len, PGSIZE);
+	uintptr_t index = (uintptr_t)va;
+	pte_t *tmppte;
+	//const void * index;
+	//perm = perm | PTE_P;
 
+	//index = va;
+	//cprintf("user_mem_check\n");
+	for(; index < bound; index += PGSIZE){
+		if(index >= ULIM){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		tmppte = pgdir_walk(env->env_pgdir, (void *)index, 0);
+		if(tmppte == NULL){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		unsigned int previ = PGOFF(*tmppte);
+		if((previ & PTE_P) == 0){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		if(previ & PTE_U){
+			if(!(previ & PTE_W) && (perm&PTE_W)){
+				user_mem_check_addr = index;
+				return -E_FAULT;
+			}
+		}else{
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		index = ROUNDDOWN(index,PGSIZE);
+	}
+	//while(index < ROUNDUP(va+len, PGSIZE)) {
+	//	if((uint32_t) index < ULIM) {
+	//		pte_t * pteptr = pgdir_walk(env->env_pgdir, index, 0);
+	//		if(pteptr) {
+	//			if(((*pteptr)& perm) == perm) {
+	//				index = ROUNDDOWN(index, PGSIZE);
+	//				continue;
+	//			}
+	//		}
+	//	}
+	//	user_mem_check_addr = (uintptr_t) index;
+	//	return -E_FAULT;
+	//}
 	return 0;
 }
 

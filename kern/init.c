@@ -10,6 +10,7 @@
 #include <kern/kclock.h>
 #include <kern/env.h>
 #include <kern/trap.h>
+#include <inc/x86.h>
 
 
 void
@@ -42,6 +43,11 @@ i386_init(void)
 
 	// Lab 3 user environment initialization functions
 	env_init();
+	//Page *p = page_alloc();
+	wrmsr(0x174, GD_KT, 0);
+	wrmsr(0x175, KSTACKTOP,0);
+	extern void sysenter_handler();
+	wrmsr(0x176, sysenter_handler,0);
 	trap_init();
 
 #if defined(TEST)
