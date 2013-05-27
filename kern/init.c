@@ -16,12 +16,15 @@
 #include <kern/spinlock.h>
 
 static void boot_aps(void);
+#include <inc/x86.h>
 
 
 void
 i386_init(void)
 {
 	extern char edata[], end[];
+    // Lab1 only
+    char chnum1 = 0, chnum2 = 0, ntest[256] = {};
 
 	// Before doing anything else, complete the ELF loading process.
 	// Clear the uninitialized global data (BSS) section of our program.
@@ -32,13 +35,25 @@ i386_init(void)
 	// Can't call cprintf until after we do this!
 	cons_init();
 
-	cprintf("6828 decimal is %o octal!\n", 6828);
+	cprintf("6828 decimal is %o octal!%n\n%n", 6828, &chnum1, &chnum2);
+    cprintf("chnum1: %d chnum2: %d\n", chnum1, chnum2);
+    cprintf("%n", NULL);
+    memset(ntest, 0xd, sizeof(ntest) - 1);
+    cprintf("%s%n", ntest, &chnum1); 
+    cprintf("chnum1: %d\n", chnum1);
+
+
 
 	// Lab 2 memory management initialization functions
 	mem_init();
 
 	// Lab 3 user environment initialization functions
 	env_init();
+	//Page *p = page_alloc();
+	wrmsr(0x174, GD_KT, 0);
+	wrmsr(0x175, KSTACKTOP,0);
+	extern void sysenter_handler();
+	wrmsr(0x176, sysenter_handler,0);
 	trap_init();
 
 	// Lab 4 multiprocessor initialization functions

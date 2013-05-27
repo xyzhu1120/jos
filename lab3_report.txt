@@ -1,0 +1,256 @@
+#Lab3 Report
+
+**朱新宇 1120379029**
+
+##partA
+
+###User Environment
+environment类似于传统的进程的概念，在mem_init()中分配一个Env的数组在存储所有的env，这个pages是类似的，每一个env代表一个进程。
+
+	envs = boot_alloc(NENV * sizeof(struct Env));
+	
+然后在env.c中初始化所有的env和env_free_list。
+
+	int i = 0;
+	for(; i < NENV - 1; ++i){
+		envs[i].env_id = 0;
+		envs[i].env_link = &(envs[i+1]);
+		envs[i].env_parent_id = 0;
+		envs[i].env_status = ENV_FREE;
+	}
+	envs[NENV - 1].env_id = 0;
+	envs[NENV - 1].env_link = NULL;
+
+	env_free_list = &(envs[0]);
+	
+然后需要创建和运行env，env_setup_vm()为env创建新的page directory并初始化kernel部分。
+
+	memmove(page2kva(p), kern_pgdir,PGSIZE);
+	memset(page2kva(p), 0, sizeof(pde_t)*PDX(UTOP));
+
+	e->env_pgdir = page2kva(p);
+	p->pp_ref++;
+	
+region_alloc则负责为env分配物理页，这在加载代码的时候很有用。
+
+	struct Page *p;
+	void *left = ROUNDDOWN(va,PGSIZE);
+	void *right = ROUNDUP(va + len, PGSIZE);
+	void *i = left;
+	for(; i < right; i += PGSIZE){
+		p = page_alloc(0);
+		page_insert(e->env_pgdir,p,i,PTE_U | PTE_W);
+	}
+
+load_icode会将二进制代码加载到env的地址空间。
+
+	struct Proghdr *ph, *eph;
+	struct Elf *elf = (struct Elf*)binary;
+	if(elf->e_magic != ELF_MAGIC)
+		goto bad;
+
+	ph = (struct Proghdr *)((uint8_t *) elf + elf->e_phoff);
+	eph = ph + elf->e_phnum;
+	lcr3(PADDR(e->env_pgdir));
+	for(; ph < eph; ++ph){
+		if(ph->p_type == ELF_PROG_LOAD){
+			region_alloc(e,(void *)ph->p_va,ph->p_memsz);
+			memmove((void *)ph->p_va, (void *)(binary + ph->p_offset), ph->p_filesz);
+			memset((void *)(ph->p_va + ph->p_filesz),0,(ph->p_memsz-ph->p_filesz));
+		}
+	}
+	lcr3(PADDR(kern_pgdir));
+	e->env_tf.tf_eip = elf->e_entry;
+	e->env_tf.tf_esp = USTACKTOP;
+	// Now map one page for the program's initial stack
+	// at virtual address USTACKTOP - PGSIZE.
+
+	// LAB 3: Your code here.
+	region_alloc(e, (void *)(USTACKTOP-PGSIZE),PGSIZE);
+	
+其中循环中的region_alloc一定要使用memsz，应为对于有些段（bss）其在代码中没占空间而实际分配的时候必须分配内存并且初始化0.
+env_run()则负责切换到某个env上。如果要切换的env不是当前的env，则需要更新curenv和相应的env state以及cr3，然后调用env_pop_tf来实际切换env
+
+	if(curenv != e){
+		if(curenv != NULL && curenv->env_status == ENV_RUNNING)
+			curenv->env_status = ENV_RUNNABLE;
+		curenv = e;
+		curenv->env_status = ENV_RUNNING;
+		curenv->env_runs++;
+		lcr3(PADDR(curenv->env_pgdir));
+	}
+	env_pop_tf(&curenv->env_tf);
+
+###Handling Interrupts and Exceptions
+处理中断有两步，首先是在 trapentry.S中定义所有trap的handler，利用TRAPHANDLER_NOEC和TRAPHANDLER两个宏分别定义没有error code和有error code的trap，在这些handler触发时，会压入中断的编号（或者error code 的padding），然后跳转到_alltraps来保存trapframe最后调用trap函数来处理。
+
+	_alltraps:
+		pushl %ds
+		pushl %es
+		pushal
+
+		movw $GD_KD, %ax
+		movw %ax, %ds
+		movw %ax, %es
+
+		pushl %esp
+		call trap
+
+在trap()中调用trap_dispatch()来调用具体的处理函数。
+
+
+
+###Question
+
+* 1.在现在的设计中，在处理之前要先把中断号压栈，但是如果中断都是跳转到统一的处理函数，那么就没有办法区分是什么中断了。
+* 2.因为14号中断是page fault，其在setgate是设置的是kernel态才能发出的，所以在用户态调用int指令会导致13号中断general protection。如果将其设置为3，也就是用户态也可以触发，但是int指令是不会不会压入错误代码的，然而在trapentry.S中却是认为会压入错误代码也就不会压入padding，也就会导致在trap()中调用trapframe的时候会发生错位。
+
+---
+
+##partB
+
+###Handling Page Fault and Breaking Point Exception
+
+主要就是处理trap_dispatch
+
+	if(tf->tf_trapno == T_PGFLT) {
+		page_fault_handler(tf);
+	} else if(tf->tf_trapno == T_BRKPT) {
+		monitor(tf);		
+	}
+	
+###System Call
+
+在实验中要求使用sysenter/sysexit指令来处理systemcall，由于sysenter会读取MSRs，所以需要在初始化的时候设置MSR
+
+	wrmsr(0x174, GD_KT, 0);
+	wrmsr(0x175, KSTACKTOP,0);
+	extern void sysenter_handler();
+	wrmsr(0x176, sysenter_handler,0);
+这样systenter会跳转到sysenter_handler中，在systenter_handler中首先压入一了当前的trapframe，然后压入esp将trapframe的指针传入syscall_dummy，等dummy返回后，在将之前压入的参数和trapframe弹出，调用sysexit结束
+
+	sysenter_handler:
+	/*
+ 	* Lab 3: Your code here for system call handling
+ 	*/
+	pushw $0x0
+	pushw $GD_UD | 3
+	pushl %ebp
+	pushfl
+
+	pushw $0x0
+	pushw $GD_UT | 3
+	pushl %esi
+	pushl $0
+	pushl $0
+
+	pushw $0x0
+
+	pushw %ds
+
+	pushw $0x0
+	pushw %es
+
+	pushal
+
+	mov $GD_KD, %ax
+	mov %ax, %ds
+	mov %ax, %es
+
+	pushl %esp
+
+	call syscall_dummy
+
+	popl %esp
+
+	popal
+
+	popl %es
+
+	popl %ds
+
+	movl %ebp, %ecx
+	movl %esi, %edx
+
+	sysexit
+
+而系统调用的入口在lib里面，不同的调用将自己的调用号传给lib/syscall.c里的syscall（内联函数）而这个函数则负责将参数压栈，保存返回地址，执行sysenter函数。
+
+	"leal .+10, %%esi\n\t"
+	"pushl %%esp\n\t"
+	"popl %%ebp\n\t"
+	"sysenter\n\t"
+	
+###User-mode startup
+
+通过calling sys_env_destroy()来给thisenv赋值
+	
+	thisenv = &envs[ENVX(sys_getenvid())];
+	
+###Page Fault and Memory Protection
+
+分为两方面，首先是Page Fualt发生如果在内核态，说明内核有问题发生 if((tf->tf_cs & 3) == 0)，这是应该panic，然后是内核在操作用户传进来的指针式，要检查这个指针指向的位置不能是非法的所以要在user_mem_check中检查
+
+	uintptr_t bound = ROUNDUP((uintptr_t)va + len, PGSIZE);
+	uintptr_t index = (uintptr_t)va;
+	pte_t *tmppte;
+	for(; index < bound; index += PGSIZE){
+		if(index >= ULIM){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		tmppte = pgdir_walk(env->env_pgdir, (void *)index, 0);
+		if(tmppte == NULL){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		unsigned int previ = PGOFF(*tmppte);
+		if((previ & PTE_P) == 0){
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		if(previ & PTE_U){
+			if(!(previ & PTE_W) && (perm&PTE_W)){
+				user_mem_check_addr = index;
+				return -E_FAULT;
+			}
+		}else{
+			user_mem_check_addr = index;
+			return -E_FAULT;
+		}
+		index = ROUNDDOWN(index,PGSIZE);
+	}
+
+要检查在指定的长度范围内，访问地址不会超过ULIM并且访问的页合法。
+
+在evilhello2中要在ring0的状态下调用evil函数，方法就是通过在GDT中设置一个入口，通过lcall来调用，首先
+
+	struct Pseudodesc p;
+	sgdt(&p);
+	int ret = sys_map_kernel_page((void *)p.pd_base, (void *)va);
+	
+通过sgdt将GDT的基址和长度拷出来，然后通过sys_map_kernel_page映射到用户态的地址空间。
+
+	uint32_t index = GD_UD >> 3;
+
+	uint32_t base = PGNUM(va) << PTXSHIFT;
+	uint32_t offset = PGOFF(p.pd_base);
+
+	gdt = (struct Segdesc*)(base + offset);
+	entry = gdt + index;
+	desc = *entry;
+	SETCALLGATE(*((struct Gatedesc *)entry), GD_KT, evil_do, 3);
+	
+然后在通过基址算出页内偏移，然后结合va所在的页算出gdt的地址，然后将gdt复制一个复本，最后通过SETCALLGATE将evil_do函数插入。在evil_do中
+
+	evil();
+	*entry = desc;
+	asm volatile("popl %ebp");
+	asm volatile("lret");
+	
+调用evil函数实现在ring0状态下的调用，然后恢复环境并放回。
+
+###Question
+
+* 3.类似于第二题，如果在SETGATEZ中将权限设置为0，则为内核态的中断，如果在用户态发出breakpoint中断，则会导致general protection fault。反之，在实现中将其设置为3，也就是允许在用户态发出，也就可以正常触发断点了。
+* 4.softint中执行了int 14指令发出了14号中断触发一个page fault中断，然而由于初始化idt的时候将14号中断设置为内核态，而softint是在用户态，所以会触发general protection fault。
