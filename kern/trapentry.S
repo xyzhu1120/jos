@@ -139,5 +139,4 @@ _alltraps:
 
 	pushl %esp
 	call trap
-	add $4, %esp
 
