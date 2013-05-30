@@ -11,6 +11,7 @@
 #include <kern/syscall.h>
 #include <kern/console.h>
 #include <kern/sched.h>
+#include <kern/spinlock.h>
 
 // Print a string to the system console.
 // The string is exactly 'len' characters long.
@@ -370,6 +371,7 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 //	panic("syscall not implemented");
 }
 
+/*
 void
 syscall_dummy(struct Trapframe *tf){
 	curenv->env_tf = *tf;
@@ -379,5 +381,21 @@ syscall_dummy(struct Trapframe *tf){
 							tf->tf_regs.reg_ebx,
 							tf->tf_regs.reg_edi,0);
 	return;
+}*/
+
+int32_t
+syscall_dummy(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5,uint32_t aesp,uint32_t aeip)
+{
+    int res;
+    lock_kernel();
+    curenv->env_tf.tf_eip = aeip;
+    curenv->env_tf.tf_esp = aesp;
+    res = syscall(syscallno,a1,a2,a3,a4,a5);
+    curenv->env_tf.tf_regs.reg_eax = res;
+    //env_run!use iret to restore eflags(IF)
+    env_run(curenv);
+    unlock_kernel();
+    //panic("syscall wrapper error!");
+    return res;
 }
 

@@ -78,6 +78,7 @@ sysenter_handler:
 /*
  * Lab 3: Your code here for system call handling
  */
+/*
 	pushw $0x0
 	pushw $GD_UD | 3
 	pushl %ebp
@@ -124,7 +125,39 @@ sysenter_handler:
 	pushl %ecx
 	pushl %edx
 	pushl %eax
-	call syscall
+	call syscall*/
+    pushl %esi
+    pushl %ebp
+    pushl %edi
+    pushl %edi
+    pushl %ebx
+    pushl %ecx
+    pushl %edx
+    pushl %eax 
+    call syscall_dummy
+    //sysenter will disable IF
+    //new version should never return!!use env_run to return and restore IF
+    //if use sysexit,must enable IF here(since could not done in user space)
+    //will cause interupt in kernel mode!!!not support in jos!!!
+    //或者考虑修改一下trap.c
+    popl %ebx
+    popl %ebx
+    popl %ebx
+    popl %ebx
+    popl %ebx
+    popl %ebx
+    popl %ecx
+    popl %edx
+    pushfl      //enable IF
+    movl (%esp),%ebx
+    orl $0x200,%ebx
+    movl %ebx, (%esp)
+    popfl
+/*
+    movl %esi, %edx
+    movl %ebp, %ecx
+*/
+    sysexit
 
 /*
  * Lab 3: Your code here for _alltraps
