@@ -240,6 +240,11 @@ trap_dispatch(struct Trapframe *tf)
 		page_fault_handler(tf);
 	} else if(tf->tf_trapno == T_BRKPT){
 		monitor(tf);		
+	} else if(tf->tf_trapno == T_SYSCALL){
+		if(tf->tf_regs.reg_eax == SYS_exofork){
+			tf->tf_regs.reg_eax = syscall(tf->tf_regs.reg_eax,0,0,0,0,0);
+			return;
+		}
 	}
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);

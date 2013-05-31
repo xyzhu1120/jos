@@ -192,6 +192,7 @@ sys_page_alloc(envid_t envid, void *va, int perm)
 		page_free(new_page);
 		return -E_NO_MEM;
 	}	
+	return 0;
 }
 
 // Map the page of memory at 'srcva' in srcenvid's address space
@@ -250,6 +251,7 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	int r = page_insert(dstenv->env_pgdir, srcpage, dstva, perm);
 	if(r < 0)
 		return -E_NO_MEM;
+	return 0;
 }
 
 // Unmap the page of memory at 'va' in the address space of 'envid'.
@@ -364,6 +366,14 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		case SYS_yield:
 			sys_yield();
 			return 0;
+		case SYS_exofork:
+		   	return sys_exofork();
+		case SYS_page_alloc:
+			return sys_page_alloc(a1, (void*)a2, a3);
+		case SYS_page_map:
+			return sys_page_map(a1, (void *)a2, a3,(void*)a4, a5);
+		case SYS_page_unmap:
+			return sys_page_unmap(a1, (void *)a2);
 		default:
 			return -E_INVAL;
 	}
