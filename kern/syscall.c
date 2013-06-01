@@ -329,6 +329,7 @@ static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
 	// LAB 4: Your code here.
+	//cprintf("send ipc");
 	struct Env *env;
 	int r = envid2env(envid, &env, 0);
 	if(r < 0)
