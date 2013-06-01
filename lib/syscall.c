@@ -120,7 +120,6 @@ sys_env_set_status(envid_t envid, int status)
 int
 sys_env_set_pgfault_upcall(envid_t envid, void *upcall)
 {
-	cprintf("---pgfault--upcall\n");
 	return syscall(SYS_env_set_pgfault_upcall, 1, envid, (uint32_t) upcall, 0, 0, 0);
 }
 
