@@ -38,7 +38,7 @@ ipc_recv(envid_t *from_env_store, void *pg, int *perm_store)
 	}
 
 	if(from_env_store != NULL){
-		*from_env_store = thisenv->env_ipc_from;
+		*from_env_store = ((struct Env*)(&envs[ENVX(sys_getenvid())]))->env_ipc_from;
 	}
 	if(perm_store != NULL) {
 		*perm_store = thisenv->env_ipc_perm;

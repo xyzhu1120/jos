@@ -42,7 +42,7 @@ pgfault(struct UTrapframe *utf)
 		panic("pgfault: wrong pde\n");
 
 	if((pte & (PTE_U | PTE_P | PTE_COW))==0)
-		panic("fgfault: wrong pte\n");
+		panic("fgfault: wrong pte %p\n", pte);
 	r = sys_page_alloc(0, (void *)PFTEMP, PTE_U | PTE_P | PTE_W);
 	if(r < 0)
 		panic("pgfault: bad sys page alloc");
@@ -103,6 +103,52 @@ duppage(envid_t envid, unsigned pn)
 	return 0;
 }
 
+static int
+sduppage(envid_t envid, unsigned pn)
+{
+	int r;
+
+	unsigned int addr = pn * PGSIZE;
+
+	if(addr >= UTOP)
+		panic("larger than UTOP");
+
+	pde_t pde;
+	pde = vpd[PDX(addr)];
+
+	if((pde & PTE_P) == 0) {
+		return 0;
+	}
+
+	pte_t pte = vpt[PGNUM(addr)];
+	if((pte & PTE_P) == 0){
+		return 0;
+	}
+
+	if(addr < USTACKTOP  && addr >= USTACKTOP - PGSIZE){
+		r = sys_page_map(0, (void *)addr, envid, (void *)addr,  PTE_U|PTE_P|PTE_COW);
+		if(r < 0)
+			panic("duppage: error page map\n");
+		r = sys_page_map(0, (void *)addr, 0, (void *)addr ,PTE_U|PTE_P|PTE_COW);
+		if(r < 0)
+			panic("duppage: error page map\n");
+		return 0;
+	}
+	if((pte & PTE_W) != 0 ){
+		r = sys_page_map(0, (void *)addr, envid, (void *)addr,  PTE_U|PTE_P|PTE_W);
+		if(r < 0)
+			panic("duppage: error page map\n");
+		r = sys_page_map(0, (void *)addr, 0, (void *)addr ,PTE_U|PTE_P|PTE_W);
+		if(r < 0)
+			panic("duppage: error page map\n");
+	}else{
+		r = sys_page_map(0, (void *)addr, envid, (void *)addr, PTE_U|PTE_P);
+		if(r < 0)
+			panic("duppage: error page map\n");
+	}
+	// LAB 4: Your code here.
+	return 0;
+}
 //
 // User-level fork with copy-on-write.
 // Set up our page fault handler appropriately.
@@ -131,7 +177,7 @@ fork(void)
 	}
 
 	if(envid == 0){
-		thisenv = &envs[ENVX(sys_getenvid())];
+		//thisenv = &envs[ENVX(sys_getenvid())];
 		return 0;
 	}
 
@@ -155,6 +201,33 @@ fork(void)
 int
 sfork(void)
 {
-	panic("sfork not implemented");
-	return -E_INVAL;
+	envid_t envid;
+	set_pgfault_handler(pgfault);	
+	envid = sys_exofork();
+	if(envid < 0) {
+		panic("exofork error\n");
+	}
+
+	if(envid == 0){
+		//thisenv = &envs[ENVX(sys_getenvid())];
+		return 0;
+	}
+
+	int i;
+	for(i = 0; i < UTOP/PGSIZE - 1; i++) {
+		sduppage(envid, i);
+	}
+
+	int r = sys_page_alloc(envid, (void *)(UXSTACKTOP - PGSIZE), PTE_U | PTE_P | PTE_W);
+	if(r < 0)
+		panic("sys page alloc failed\n");
+	extern void _pgfault_upcall(void);
+	r = sys_env_set_pgfault_upcall(envid, (void *)_pgfault_upcall);
+	if(r < 0)
+		panic("sys env set pgfault upcall failded\n");
+	sys_env_set_status(envid, ENV_RUNNABLE);
+	return envid;
+
+//	panic("sfork not implemented");
+//	return -E_INVAL;
 }
