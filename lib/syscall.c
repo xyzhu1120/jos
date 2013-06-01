@@ -6,20 +6,33 @@
 static inline int32_t
 syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
 {
+    if(a5!=0 && a5 <= ((~0)>>8))
+    {
+        num += (a5<<8);
+    }
 	int32_t ret;
-	asm volatile("pushl %%ecx\n\t"
+	asm volatile(
+         "pushl %%ecx\n\t"
 		 "pushl %%edx\n\t"
 	         "pushl %%ebx\n\t"
 		 "pushl %%esp\n\t"
 		 "pushl %%ebp\n\t"
 		 "pushl %%esi\n\t"
 		 "pushl %%edi\n\t"
+         "pushfl\n\t"//if must be set in ring0
 				 
                  //Lab 3: Your code here
-				 "leal .+10, %%esi\n\t"
-				 "pushl %%esp\n\t"
-				 "popl %%ebp\n\t"
-				"sysenter\n\t"
+		 "movl %1, %%eax\n\t"
+		 "movl %2, %%edx\n\t"
+		 "movl %3, %%ecx\n\t"
+		 "movl %4, %%ebx\n\t"
+		 "movl %5, %%edi\n\t"
+		 "leal 1f, %%esi\n\t"
+		 "movl %%esp, %%ebp\n\t"
+		 "sysenter\n\t"
+		 "1:\n\t"
+		 "movl %%eax, %0\n\t"
+                 "popfl\n\t"
                  "popl %%edi\n\t"
                  "popl %%esi\n\t"
                  "popl %%ebp\n\t"
@@ -27,7 +40,6 @@ syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
                  "popl %%ebx\n\t"
                  "popl %%edx\n\t"
                  "popl %%ecx\n\t"
-                 
                  : "=a" (ret)
                  : "a" (num),
                    "d" (a1),
@@ -39,7 +51,7 @@ syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 
 	if(check && ret > 0)
 		panic("syscall %d returned %d (> 0)", num, ret);
-
+	//cprintf("end %x\n",ret);
 	return ret;
 }
 
@@ -108,6 +120,7 @@ sys_env_set_status(envid_t envid, int status)
 int
 sys_env_set_pgfault_upcall(envid_t envid, void *upcall)
 {
+	cprintf("---pgfault--upcall\n");
 	return syscall(SYS_env_set_pgfault_upcall, 1, envid, (uint32_t) upcall, 0, 0, 0);
 }
 
@@ -122,4 +135,16 @@ sys_ipc_recv(void *dstva)
 {
 	return syscall(SYS_ipc_recv, 1, (uint32_t)dstva, 0, 0, 0, 0);
 }
-
+/*
+envid_t
+sys_exofork(void)
+{
+	envid_t ret;
+	__asm __volatile("int %2"
+		: "=a" (ret)
+		: "a" (SYS_exofork),
+		  "i" (T_SYSCALL)
+	);
+	return ret;
+}
+*/
