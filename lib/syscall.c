@@ -2,7 +2,51 @@
 
 #include <inc/syscall.h>
 #include <inc/lib.h>
+static inline int32_t
+syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
+{
+    if(a5!=0 && a5 <= ((~0)>>8))
+    {
+        num += (a5<<8);
+    }
+	int32_t ret;
+	asm volatile(
+         "pushl %%ecx\n\t"
+		 "pushl %%edx\n\t"
+	         "pushl %%ebx\n\t"
+		 "pushl %%esp\n\t"
+		 "pushl %%ebp\n\t"
+		 "pushl %%esi\n\t"
+		 "pushl %%edi\n\t"
+				 
+                 //Lab 3: Your code here
+		 "leal .+10, %%esi\n\t"
+		 "pushl %%esp\n\t"
+		 "popl %%ebp\n\t"
+		 "sysenter\n\t"
 
+                 "popl %%edi\n\t"
+                 "popl %%esi\n\t"
+                 "popl %%ebp\n\t"
+                 "popl %%esp\n\t"
+                 "popl %%ebx\n\t"
+                 "popl %%edx\n\t"
+                 "popl %%ecx\n\t"
+                 : "=a" (ret)
+                 : "a" (num),
+                   "d" (a1),
+                   "c" (a2),
+                   "b" (a3),
+                   "D" (a4)
+                 : "cc", "memory");
+
+
+	if(check && ret > 0)
+		panic("syscall %d returned %d (> 0)", num, ret);
+	//cprintf("end %x\n",ret);
+	return ret;
+}
+/*
 static inline int32_t
 syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
 {
@@ -54,7 +98,7 @@ syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 	//cprintf("end %x\n",ret);
 	return ret;
 }
-
+*/
 void
 sys_cputs(const char *s, size_t len)
 {

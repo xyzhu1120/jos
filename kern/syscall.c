@@ -518,18 +518,19 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
     //cprintf("res %x\n",res);
     return res;
 }
-/*
 void
 syscall_dummy(struct Trapframe *tf){
+    lock_kernel();
 	curenv->env_tf = *tf;
 	tf->tf_regs.reg_eax=syscall(tf->tf_regs.reg_eax,
 							tf->tf_regs.reg_edx,
 							tf->tf_regs.reg_ecx,
 							tf->tf_regs.reg_ebx,
 							tf->tf_regs.reg_edi,0);
+    unlock_kernel();
 	return;
-}*/
-
+}
+/*
 int32_t
 syscall_dummy(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5,uint32_t aesp,uint32_t aeip)
 {
@@ -545,4 +546,5 @@ syscall_dummy(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_
     //panic("syscall wrapper error!");
     return res;
 }
+*/
 
